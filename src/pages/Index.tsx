@@ -20,12 +20,64 @@ const Index = () => {
     fetchProducts();
   }, []);
 
+  // ------------------------------------------------------------
+  // NORMALIZADOR (quita acentos, comas, símbolos y espacios extra)
+  // ------------------------------------------------------------
+  const normalize = (str: string) =>
+    str
+      ?.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // acentos
+      .replace(/[^a-z0-9\s]/gi, " ") // símbolos
+      .replace(/\s+/g, " ") // espacios dobles
+      .trim() || "";
+
+  // ------------------------------------------------------------
+  // MOTOR DE BÚSQUEDA INTELIGENTE CON RANKING
+  // ------------------------------------------------------------
+  const smartSearch = (products: Product[], query: string) => {
+    const terms = normalize(query).split(" ").filter(Boolean);
+    if (terms.length === 0) return products;
+
+    return products
+      .map((p) => {
+        const haystack = normalize(`
+          ${p.producto}
+          ${p.descripcion_detallada}
+          ${p.beneficios_usos}
+          ${p.palabras_clave}
+        `);
+
+        let score = 0;
+
+        for (const term of terms) {
+          if (haystack.includes(term)) {
+            score += 10;
+
+            // BONUS: coincidencia por campo
+            if (normalize(p.producto).includes(term)) score += 30;
+            if (normalize(p.palabras_clave).includes(term)) score += 20;
+            if (normalize(p.beneficios_usos).includes(term)) score += 10;
+
+            // BONUS: inicio de palabra → "uñ" encuentra "uña"
+            const regex = new RegExp(`\\b${term}`, "i");
+            if (regex.test(haystack)) score += 5;
+          }
+        }
+
+        return { product: p, score };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.product);
+  };
+
+  // ------------------------------------------------------------
+  // FETCH DE PRODUCTOS
+  // ------------------------------------------------------------
   const fetchProducts = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .order("id", { ascending: false });
+    const { data, error } = await supabase.from("products").select("*").order("id", { ascending: false });
 
     if (error) {
       console.error("Error fetching products:", error);
@@ -34,9 +86,13 @@ const Index = () => {
       setFilteredProducts(data || []);
       extractCategories(data || []);
     }
+
     setLoading(false);
   };
 
+  // ------------------------------------------------------------
+  // EXTRAER CATEGORÍAS
+  // ------------------------------------------------------------
   const extractCategories = (products: Product[]) => {
     const allKeywords = products
       .flatMap((p) => p.palabras_clave?.split(",") || [])
@@ -47,6 +103,9 @@ const Index = () => {
     setCategories(uniqueCategories);
   };
 
+  // ------------------------------------------------------------
+  // BÚSQUEDA (usa motor inteligente)
+  // ------------------------------------------------------------
   const handleSearch = (query: string) => {
     if (!query.trim()) {
       setFilteredProducts(products);
@@ -54,22 +113,14 @@ const Index = () => {
       return;
     }
 
-    const searchTerms = query.toLowerCase().split(" ");
-    const filtered = products.filter((product) => {
-      const searchableText = `
-        ${product.producto}
-        ${product.descripcion_detallada}
-        ${product.beneficios_usos}
-        ${product.palabras_clave}
-      `.toLowerCase();
-
-      return searchTerms.some((term) => searchableText.includes(term));
-    });
-
-    setFilteredProducts(filtered);
+    const results = smartSearch(products, query);
+    setFilteredProducts(results);
     setSelectedCategory(null);
   };
 
+  // ------------------------------------------------------------
+  // FILTRO POR CATEGORÍA
+  // ------------------------------------------------------------
   const handleCategoryClick = (category: string) => {
     if (selectedCategory === category) {
       setSelectedCategory(null);
@@ -77,41 +128,38 @@ const Index = () => {
     } else {
       setSelectedCategory(category);
       const filtered = products.filter((product) =>
-        product.palabras_clave?.toLowerCase().includes(category.toLowerCase())
+        normalize(product.palabras_clave || "").includes(normalize(category)),
       );
       setFilteredProducts(filtered);
     }
   };
 
+  // ------------------------------------------------------------
+  // FRONTEND
+  // ------------------------------------------------------------
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-        {/* Hero Section */}
+        {/* HERO */}
         <div className="relative h-[400px] overflow-hidden">
-          <img
-            src={brandHero}
-            alt="Naturaleza Mística - Energía para la vida"
-            className="w-full h-full object-cover"
-          />
+          <img src={brandHero} alt="Naturaleza Mística - Energía para la vida" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
         </div>
 
-        {/* Search Section */}
+        {/* SEARCH */}
         <div className="container mx-auto px-4 -mt-20 relative z-10">
           <div className="bg-card rounded-2xl shadow-2xl p-8 mb-8">
             <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold text-primary mb-2">
-                Encuentra tu producto ideal
-              </h2>
-              <p className="text-muted-foreground">
-                Busca por síntomas, beneficios o nombre del producto
-              </p>
+              <h2 className="text-3xl font-bold text-primary mb-2">Encuentra tu producto ideal</h2>
+              <p className="text-muted-foreground">Busca por síntomas, beneficios o nombre del producto</p>
             </div>
+
+            {/* BUSCADOR EN VIVO */}
             <SearchBar onSearch={handleSearch} />
           </div>
 
-          {/* Categories */}
+          {/* CATEGORIES */}
           {categories.length > 0 && (
             <div className="mb-8">
               <h3 className="text-xl font-semibold text-primary mb-4 flex items-center gap-2">
@@ -133,12 +181,10 @@ const Index = () => {
             </div>
           )}
 
-          {/* Products Grid */}
+          {/* GRID */}
           <div className="mb-8">
             <h3 className="text-2xl font-bold text-primary mb-6">
-              {selectedCategory
-                ? `Productos para: ${selectedCategory}`
-                : "Todos los Productos"}
+              {selectedCategory ? `Productos para: ${selectedCategory}` : "Todos los Productos"}
             </h3>
 
             {loading ? (
@@ -156,25 +202,19 @@ const Index = () => {
             ) : (
               <div className="text-center py-12">
                 <Leaf className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-xl font-semibold mb-2">
-                  No encontramos productos
-                </h3>
-                <p className="text-muted-foreground">
-                  Intenta con otros términos de búsqueda
-                </p>
+                <h3 className="text-xl font-semibold mb-2">No encontramos productos</h3>
+                <p className="text-muted-foreground">Intenta con otros términos de búsqueda</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer */}
+        {/* FOOTER */}
         <footer className="bg-primary text-primary-foreground py-8 mt-12">
           <div className="container mx-auto px-4 text-center">
             <h3 className="text-2xl font-bold mb-2">Naturaleza Mística</h3>
             <p className="text-sm opacity-90">Energía para la vida</p>
-            <p className="text-xs opacity-75 mt-4">
-              Productos medicinales, artesanales y orgánicos
-            </p>
+            <p className="text-xs opacity-75 mt-4">Productos medicinales, artesanales y orgánicos</p>
           </div>
         </footer>
       </div>
