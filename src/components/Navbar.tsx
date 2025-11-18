@@ -2,10 +2,12 @@ import { Link } from "react-router-dom";
 import { ShoppingCart, User, Leaf } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/useCart";
+import { useAuth } from "@/hooks/useAuth";
 import logo from "@/assets/logo.jpg";
 
 export const Navbar = () => {
   const { items } = useCart();
+  const { user } = useAuth();
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -22,7 +24,7 @@ export const Navbar = () => {
 
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" asChild>
-              <Link to="/admin">
+              <Link to={user ? "/admin" : "/auth"}>
                 <User className="h-5 w-5" />
               </Link>
             </Button>
