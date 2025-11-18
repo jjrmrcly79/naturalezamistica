@@ -8,10 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Product } from "@/types/product";
 import { toast } from "sonner";
-import { Plus, Edit, Trash2, Eye } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Plus, Edit, Trash2, Eye, LogOut } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Admin() {
+  const navigate = useNavigate();
+  const { user, loading, isAdmin, signOut } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState({
@@ -27,8 +30,17 @@ export default function Admin() {
   });
 
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    if (!loading) {
+      if (!user) {
+        navigate("/auth");
+      } else if (!isAdmin) {
+        toast.error("No tienes permisos de administrador");
+        navigate("/");
+      } else {
+        fetchProducts();
+      }
+    }
+  }, [user, loading, isAdmin, navigate]);
 
   const fetchProducts = async () => {
     const { data, error } = await supabase
@@ -96,16 +108,16 @@ export default function Admin() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("¿Estás seguro de eliminar este producto?")) return;
+    if (window.confirm("¿Estás seguro de eliminar este producto?")) {
+      const { error } = await supabase.from("products").delete().eq("id", id);
 
-    const { error } = await supabase.from("products").delete().eq("id", id);
-
-    if (error) {
-      toast.error("Error al eliminar producto");
-      console.error(error);
-    } else {
-      toast.success("Producto eliminado");
-      fetchProducts();
+      if (error) {
+        toast.error("Error al eliminar producto");
+        console.error(error);
+      } else {
+        toast.success("Producto eliminado");
+        fetchProducts();
+      }
     }
   };
 
@@ -124,25 +136,59 @@ export default function Admin() {
     });
   };
 
-  return (
-    <>
-      <Navbar />
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-        <div className="container mx-auto px-4 py-8">
-          <h1 className="text-3xl font-bold text-primary mb-8">Panel de Administración</h1>
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success("Sesión cerrada");
+    navigate("/");
+  };
 
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Form */}
-            <Card>
-              <CardHeader>
-                <CardTitle>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="container mx-auto px-4 py-8">
+          <p className="text-center">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">Panel de Administración</h1>
+          <Button onClick={handleSignOut} variant="outline">
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar Sesión
+          </Button>
+        </div>
+
+        <div className="grid gap-8">
+          {/* Form Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>
                   {editingProduct ? "Editar Producto" : "Nuevo Producto"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <Label htmlFor="producto">Nombre del Producto *</Label>
+                </span>
+                {editingProduct && (
+                  <Button onClick={resetForm} variant="outline" size="sm">
+                    Cancelar
+                  </Button>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="producto">Nombre del Producto*</Label>
                     <Input
                       id="producto"
                       value={formData.producto}
@@ -152,9 +198,8 @@ export default function Admin() {
                       required
                     />
                   </div>
-
-                  <div>
-                    <Label htmlFor="precio">Precio *</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="precio">Precio*</Label>
                     <Input
                       id="precio"
                       type="number"
@@ -166,159 +211,164 @@ export default function Admin() {
                       required
                     />
                   </div>
+                </div>
 
-                  <div>
-                    <Label htmlFor="descripcion">Descripción Detallada</Label>
-                    <Textarea
-                      id="descripcion"
-                      value={formData.descripcion_detallada}
+                <div className="space-y-2">
+                  <Label htmlFor="descripcion_detallada">
+                    Descripción Detallada
+                  </Label>
+                  <Textarea
+                    id="descripcion_detallada"
+                    value={formData.descripcion_detallada}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        descripcion_detallada: e.target.value,
+                      })
+                    }
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="beneficios_usos">Beneficios / Usos</Label>
+                  <Textarea
+                    id="beneficios_usos"
+                    value={formData.beneficios_usos}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        beneficios_usos: e.target.value,
+                      })
+                    }
+                    rows={3}
+                  />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="palabras_clave">
+                      Palabras Clave / Síntomas
+                    </Label>
+                    <Input
+                      id="palabras_clave"
+                      value={formData.palabras_clave}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          descripcion_detallada: e.target.value,
+                          palabras_clave: e.target.value,
                         })
                       }
-                      rows={3}
                     />
                   </div>
-
-                  <div>
-                    <Label htmlFor="beneficios">Beneficios / Usos Principales</Label>
-                    <Textarea
-                      id="beneficios"
-                      value={formData.beneficios_usos}
+                  <div className="space-y-2">
+                    <Label htmlFor="proveedor">Proveedor</Label>
+                    <Input
+                      id="proveedor"
+                      value={formData.proveedor}
                       onChange={(e) =>
-                        setFormData({ ...formData, beneficios_usos: e.target.value })
+                        setFormData({ ...formData, proveedor: e.target.value })
                       }
-                      rows={3}
                     />
                   </div>
+                </div>
 
-                  <div>
-                    <Label htmlFor="palabras">
-                      Palabras Clave / Síntomas (separadas por comas)
-                    </Label>
-                    <Textarea
-                      id="palabras"
-                      value={formData.palabras_clave}
-                      onChange={(e) =>
-                        setFormData({ ...formData, palabras_clave: e.target.value })
-                      }
-                      placeholder="Pre-entreno, Fatiga muscular, Energía"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="proveedor">Proveedor</Label>
-                      <Input
-                        id="proveedor"
-                        value={formData.proveedor}
-                        onChange={(e) =>
-                          setFormData({ ...formData, proveedor: e.target.value })
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="cantidad">Cantidad</Label>
-                      <Input
-                        id="cantidad"
-                        value={formData.cantidad}
-                        onChange={(e) =>
-                          setFormData({ ...formData, cantidad: e.target.value })
-                        }
-                        placeholder="600g"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="especificacion">Especificación / Ingredientes</Label>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="especificacion">Especificación</Label>
                     <Input
                       id="especificacion"
                       value={formData.especificacion}
                       onChange={(e) =>
-                        setFormData({ ...formData, especificacion: e.target.value })
+                        setFormData({
+                          ...formData,
+                          especificacion: e.target.value,
+                        })
                       }
-                      placeholder="Citrulina, Arginina, Carnitina"
                     />
                   </div>
-
-                  <div>
-                    <Label htmlFor="image_url">URL de Imagen</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="cantidad">Cantidad</Label>
                     <Input
-                      id="image_url"
-                      value={formData.image_url}
+                      id="cantidad"
+                      value={formData.cantidad}
                       onChange={(e) =>
-                        setFormData({ ...formData, image_url: e.target.value })
+                        setFormData({ ...formData, cantidad: e.target.value })
                       }
-                      placeholder="https://..."
                     />
                   </div>
+                </div>
 
-                  <div className="flex gap-2">
-                    <Button type="submit" className="flex-1">
-                      {editingProduct ? "Actualizar" : "Crear"} Producto
-                    </Button>
-                    {editingProduct && (
-                      <Button type="button" variant="outline" onClick={resetForm}>
-                        Cancelar
-                      </Button>
-                    )}
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="image_url">URL de Imagen</Label>
+                  <Input
+                    id="image_url"
+                    type="url"
+                    value={formData.image_url}
+                    onChange={(e) =>
+                      setFormData({ ...formData, image_url: e.target.value })
+                    }
+                  />
+                </div>
 
-            {/* Products List */}
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-primary">Productos Existentes</h2>
-              {products.map((product) => (
-                <Card key={product.id}>
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">{product.producto}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          ${product.precio.toFixed(2)} - {product.cantidad}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          asChild
-                        >
-                          <Link to={`/product/${product.id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(product)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => handleDelete(product.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                <Button type="submit" className="w-full">
+                  <Plus className="mr-2 h-4 w-4" />
+                  {editingProduct ? "Actualizar Producto" : "Crear Producto"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Products List */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Productos ({products.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {products.map((product) => (
+                  <div
+                    key={product.id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
+                  >
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{product.producto}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        ${product.precio} - ID: {product.id}
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        asChild
+                      >
+                        <Link to={`/product/${product.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(product)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDelete(product.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </>
+    </div>
   );
 }
