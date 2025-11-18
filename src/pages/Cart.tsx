@@ -1,18 +1,53 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Trash2, ShoppingBag, Loader2 } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect } from "react";
 
 export default function Cart() {
   const { items, removeItem, updateQuantity, clearCart, total } = useCart();
+  const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
 
-  const handleCheckout = () => {
-    toast.success("¡Gracias por tu compra! Te contactaremos pronto.");
-    clearCart();
+  useEffect(() => {
+    if (searchParams.get("success") === "true") {
+      toast.success("¡Gracias por tu compra! Te contactaremos pronto para confirmar tu pedido.");
+      clearCart();
+      // Remove success param from URL
+      window.history.replaceState({}, '', '/cart');
+    }
+  }, [searchParams, clearCart]);
+
+  const handleCheckout = async () => {
+    if (items.length === 0) {
+      toast.error("Tu carrito está vacío");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { items },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        // Open Stripe checkout in a new tab
+        window.open(data.url, "_blank");
+        toast.info("Se abrió la página de pago en una nueva pestaña");
+      }
+    } catch (error: any) {
+      console.error("Checkout error:", error);
+      toast.error("Error al procesar el pago. Por favor intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (items.length === 0) {
@@ -152,8 +187,20 @@ export default function Cart() {
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
-                  <Button className="w-full" size="lg" onClick={handleCheckout}>
-                    Finalizar Compra
+                  <Button 
+                    className="w-full" 
+                    size="lg" 
+                    onClick={handleCheckout}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Procesando...
+                      </>
+                    ) : (
+                      "Finalizar Compra"
+                    )}
                   </Button>
                   <Button
                     variant="ghost"
