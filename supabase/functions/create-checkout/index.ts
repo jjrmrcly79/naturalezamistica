@@ -22,10 +22,44 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid session" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { items } = await req.json() as { items: CartItem[] };
 
     if (!items || items.length === 0) {
       throw new Error("No items in cart");
+    }
+
+    // Verify product IDs and fetch real prices from database
+    const productIds = items.map(item => item.id);
+    const { data: dbProducts, error: dbError } = await supabaseClient
+      .from("products")
+      .select("id, producto, precio, image_url")
+      .in("id", productIds);
+
+    if (dbError || !dbProducts) {
+      throw new Error("Failed to verify products");
     }
 
     // Initialize Stripe
@@ -33,18 +67,25 @@ serve(async (req) => {
       apiVersion: "2025-08-27.basil",
     });
 
-    // Create line items for Stripe checkout
-    const lineItems = items.map((item) => ({
-      price_data: {
-        currency: "usd",
-        product_data: {
-          name: item.producto,
-          images: item.image_url ? [item.image_url] : [],
+    // Create line items using DATABASE prices, not client prices
+    const lineItems = items.map((item) => {
+      const dbProduct = dbProducts.find(p => p.id === item.id);
+      if (!dbProduct) {
+        throw new Error(`Invalid product ID: ${item.id}`);
+      }
+      
+      return {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: dbProduct.producto,
+            images: dbProduct.image_url ? [dbProduct.image_url] : [],
+          },
+          unit_amount: Math.round(dbProduct.precio * 100), // Use DB price!
         },
-        unit_amount: Math.round(item.precio * 100), // Convert to cents
-      },
-      quantity: item.quantity,
-    }));
+        quantity: item.quantity,
+      };
+    });
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
