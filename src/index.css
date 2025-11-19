@@ -50,11 +50,11 @@ All colors MUST be HSL.
     /* Gradients for natural effect */
     --gradient-forest: linear-gradient(135deg, hsl(155, 45%, 30%), hsl(140, 50%, 50%));
     --gradient-earth: linear-gradient(180deg, hsl(40, 40%, 97%), hsl(140, 30%, 92%));
-    
+
     /* Shadows */
     --shadow-soft: 0 2px 8px hsl(150, 30%, 20%, 0.08);
     --shadow-medium: 0 4px 16px hsl(150, 30%, 20%, 0.12);
-    
+
     /* Transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
@@ -101,4 +101,15 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+}
+/* 🔥 Quitar el badge de "Edit with Lovable" de la vista pública */
+.lovable-editor-widget,
+.lovable-editor-badge,
+[data-lovable-badge],
+.lovable-editor-container,
+iframe[src*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
